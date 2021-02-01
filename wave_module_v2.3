@@ -1,0 +1,573 @@
+#!/usr/bin/env python3
+# -*- coding: UTF-8 -*-
+
+__author__ = 'wangliang'
+__version__ = ''
+
+import time, xlrd, xlwt, tkinter, shutil, serial, threading, ctypes, inspect, serial.tools.list_ports
+from playsound import playsound
+from xlutils.copy import copy
+from tkinter import *
+from tkinter import ttk
+from tkinter import scrolledtext
+from tkinter.messagebox import showinfo
+from tkinter.filedialog import askdirectory
+from tkinter.filedialog import askopenfilename
+
+Test_time = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
+
+# port_list = list(serial.tools.list_ports.comports())
+# port_name_list = []
+port_name = None
+# for itms in port_list:
+#     port_name_list.append(itms.device)
+#     port_name = port_name_list[0]
+#     print('已自动识别到串口：' + port_name)
+
+style1 = xlwt.XFStyle()
+style2 = xlwt.XFStyle()
+font = xlwt.Font()  # 字体
+font.name = 'Arial'
+font.bold = False
+font.height = 200  # 字体大小*10
+style1.font = font
+style2.font = font
+# 边框
+borders = xlwt.Borders()
+borders.top = xlwt.Borders.THIN
+borders.bottom = xlwt.Borders.THIN
+borders.left = xlwt.Borders.THIN
+borders.right = xlwt.Borders.THIN
+style1.borders = borders
+style2.borders = borders
+# cell颜色
+pattern = xlwt.Pattern()  # Create the Pattern
+pattern.pattern = xlwt.Pattern.SOLID_PATTERN
+pattern.pattern_fore_colour = 2  # 0=Black, 1=White, 2=Red, 3=Green, 4=Blue, 5=Yellow, 6=Magenta, 7=Cyan, 16=Maroon, 17=Dark Green, 18=Dark Blue, 19=Dark Yellow
+style1.pattern = pattern  # Add Pattern to Style
+
+
+#-----------------------------串口--------------------------#
+def com_validate():
+    global ser
+    try:
+        ser = serial.Serial(com_number.get(), port.get(), timeout=3)
+    except:
+        tkinter.messagebox.showerror(title="Warning", message='串口连接失败，请检查串口是否被占用！')
+        exit()
+    else:
+        print("串口连接成功")
+
+def wait_for_cmd_OK():
+    global line, result_print, result_data1, result_data2, result_data4, result_data5
+    result_print = ['1']
+    result_data1 = 'PASS'
+    result_data2 = 'PASS'
+    result_data4 = 'PASS'
+    result_data5 = 'PASS'
+    while True:
+        line = ser.readline()  # 读取所有返回的结果
+        try:
+            print(line.decode('utf-8'), end='')  # 打印出返回的结果
+        except:
+            pass
+        if (re.search(b'Login incorrect', line)):
+            result_print[0] = '登陆失败'
+            tkinter.messagebox.showerror(title="登陆失败", message='请重启设备并重新运行程序')
+            break
+        if (re.search(b'login:', line)):
+            result_print[0] = '登陆'
+            result_data1 = 'PASS'
+            break
+        if (re.search(b'Password:', line)):  # 正则表达式匹配，当返回数据出现时结束
+            result_print[0] = '密码输入中'
+            break
+        if (re.search(b'~$', line)):
+            # 当返回数据出现enter时结束
+            break
+
+        if (re.search(b'osrc#', line)):
+            result_print[0] = '登陆成功'
+            result_data2 = 'PASS'
+            break
+        if (re.search(b'root@stretch-armhf:/home/osrc/emmc_images#', line)):
+            result_print[0] = '进入/home/osrc/emmc_images 目录成功'
+            break
+
+
+def sendAT_Cmd(serInstance, atCmdStr):  # 定义发送命令函数
+    serInstance.write(atCmdStr.encode('utf-8'))
+    wait_for_cmd_OK()
+#----------------------------------
+
+
+def com_validate_QSPI():
+    global ser_QSPI
+    try:
+        ser_QSPI = serial.Serial(com_number.get(), port.get(), timeout=3)
+    except:
+        tkinter.messagebox.showerror(title="Warning", message='串口连接失败，请检查串口是否被占用！')
+        exit()
+    else:
+        print("串口连接成功")
+
+def wait_for_cmd_OK_QSPI():
+    global result_print_QSPI, line_QSPI, result_data6
+    result_print_QSPI = ['1']
+    result_data6 = 'PASS'
+    while True:
+        line_QSPI = ser_QSPI.readline()  # 读取所有返回的结果
+        try:
+            print(line_QSPI.decode('utf-8'), end='')  # 打印出返回的结果
+        except:
+            pass
+        if (re.search(b'login:', line_QSPI)):
+            result_print_QSPI[0] = 'QSPI 启动模式成功'
+            result_data6 = 'PASS'
+            #tkinter.messagebox.showinfo(title="QSPI 启动模式成功", message='测试已完成,请更换核心板！')
+            break
+
+def sendAT_Cmd_QSPI(serInstance, atCmdStr):  # 定义发送命令函数
+    serInstance.write(atCmdStr.encode('utf-8'))
+    wait_for_cmd_OK_QSPI()
+
+#--------------------------------
+
+def com_validate_ping():
+    global ser_ping
+    try:
+        ser_ping = serial.Serial(com_number.get(), port.get(), timeout=3)
+    except:
+        tkinter.messagebox.showerror(title="Warning", message='串口连接失败，请检查串口是否被占用！')
+        exit()
+    else:
+        print("串口连接成功")
+
+def wait_for_cmd_OK_ping():
+    global result_print_ping, line_ping, result_data3, result_data5, result_data4
+    result_print_ping = ['1']
+    result_data3 = 'PASS'
+    result_data5 = 'PASS'
+    result_data4 = 'PASS'
+
+    while True:
+        line_ping = ser_ping.readline()  # 读取所有返回的结果
+        try:
+            print(line_ping.decode('utf-8'), end='')  # 打印出返回的结果
+        except:
+            pass
+        if (re.search(b'ttl=', line_ping)):
+            result_print_ping[0] = '网口连接成功'
+            result_data3 = 'PASS'
+            break
+        if (re.search(b'Network is unreachable', line_ping)):
+            result_print_ping[0] = '网口连接失败'
+            result_data3 = 'FAIL'
+            playsound('C:\\wave_module\\template\\ping.mp3')
+            tkinter.messagebox.showinfo(title="WARNNING", message='网口连接失败')
+            break
+        if (re.search(b'Finished make_parted.sh', line_ping)):
+            result_print[0] = 'emmc 分区完成！'
+            result_data4 = 'PASS'
+            break
+        if (re.search(b'Finished deploy_image.sh', line_ping)):
+            result_print[0] = 'emmc 程序固化成功！'
+            result_data5 = 'PASS'
+            playsound('C:\\wave_module\\template\\deploy.mp3')
+            tkinter.messagebox.showinfo(title="emmc固化已完成", message='请下电后将拨码1调至ON, 再上电')
+            break
+        if (re.search(b'no bootable device found', line_ping)) or (re.search(b'no rootfs partition found', line_ping)):
+            result_print[0] = 'emmc 程序固化失败！'
+            result_data5 = 'FAIL'
+            playsound('C:\\wave_module\\template\\deploy_fail.mp3')
+            #tkinter.messagebox.showerror(title="emmc固化失败", message='正在重新运行分区固化')
+            break
+
+def sendAT_Cmd_ping(serInstance, atCmdStr):  # 定义发送命令函数
+    serInstance.write(atCmdStr.encode('utf-8'))
+    wait_for_cmd_OK_ping()
+
+#------拷贝模板------#
+
+class Copy_Test_Template():
+    def __init__(self):       # 初始化方法
+        global test_Result_get
+        test_template_get = str(test_template.get()).replace('/', '\\')
+        test_Result_get = str(test_Result.get()).replace('/', '\\') + "\\PASS" + "\\wave_" + sn.get() + "_TEST_Result_" + Test_time + ".xls"
+        shutil.copy(test_template_get, test_Result_get)  # 模板拷贝到报告保存地址
+
+# ------ 写入结测试果 ---------#
+def write_test_result():  # 定义写入结果的类
+    rb = xlrd.open_workbook(test_Result_get, formatting_info=True)  # 打开结果文件，并保持原格式
+    wb = copy(rb)  # 拷贝一份结果文件, 由于openpyxl不支持xls
+    sheet = wb.get_sheet(0)  # 第一个sheet
+    sheet.write(0, 1, Test_time, style2)  # 写入测试时间
+    sheet.write(1, 1, sn.get(), style2)
+
+    if result_data1 == 'FAIL':
+        sheet.write(3, 1, str(result_data1), style1)
+    else:
+        sheet.write(3, 1, str(result_data1), style2)
+
+    if result_data2 == 'FAIL':
+        sheet.write(4, 1, str(result_data2), style1)
+    else:
+        sheet.write(4, 1, str(result_data2), style2)
+
+    if result_data3 == 'FAIL':
+        sheet.write(5, 1, str(result_data3), style1)
+    else:
+        sheet.write(5, 1, str(result_data3), style2)
+
+    if result_data4 == 'FAIL':
+        sheet.write(6, 1, str(result_data4), style1)
+    else:
+        sheet.write(6, 1, str(result_data4), style2)
+
+    if result_data5 == 'FAIL':
+        sheet.write(7, 1, str(result_data5), style1)
+    else:
+        sheet.write(7, 1, str(result_data5), style2)
+
+    if result_data6 == 'FAIL':
+        sheet.write(8, 1, str(result_data6), style1)
+    else:
+        sheet.write(8, 1, str(result_data6), style2)
+    wb.save(test_Result_get)
+
+def test_Result_handle():
+    Result_data = xlrd.open_workbook(test_Result_get, formatting_info=TRUE)
+    result_sheets = Result_data.sheet_names()
+    test_Result_dir = str(test_Result.get()).replace('/', '\\')
+    bgx_list = []
+
+    for index, sh in enumerate(result_sheets):
+        result_sheet = Result_data.sheet_by_index(index)
+        rows, cols = result_sheet.nrows, result_sheet.ncols
+        for row in range(rows):
+            for col in range(cols):
+                xfx = result_sheet.cell_xf_index(row, col)
+                xf = Result_data.xf_list[xfx]
+                bgx = xf.background.pattern_colour_index
+                bgx_list.append(bgx)
+    if 2 in bgx_list:
+        try:
+            shutil.move(test_Result_get, test_Result_dir + "\\FAIL"+ "\\wave_" + sn.get() + "_TEST_Result_" + Test_time + ".xls")
+            playsound('C:\\wave_module\\template\\fail.mp3')
+            tkinter.messagebox.showinfo(title="Attention", message='测试结束，FAIL')
+        except FileNotFoundError:
+            pass
+    else:
+        playsound('C:\\wave_module\\template\\pass.mp3')
+        tkinter.messagebox.showinfo(title="请更换核心板", message='测试结束，PASS')
+
+
+
+#自定义的线程函数类
+def thread_it(func, *args):
+  '''将函数放入线程中执行'''
+  # 创建线程
+  global t
+  t = threading.Thread(target=func, args=args)
+  # 守护线程
+  t.setDaemon(True)
+  # 启动线程
+  t.start()
+
+def _async_raise(tid, exctype):
+  """raises the exception, performs cleanup if needed"""
+  tid = ctypes.c_long(tid)
+  if not inspect.isclass(exctype):
+    exctype = type(exctype)
+  res = ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, ctypes.py_object(exctype))
+  if res == 0:
+    raise ValueError("invalid thread id")
+  elif res != 1:
+    # """if it returns a number greater than one, you're in trouble,
+    # and you should call it again with exc=NULL to revert the effect"*斜体样式*""
+    ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, None)
+    raise SystemError("PyThreadState_SetAsyncExc failed")
+
+def stop_thread(thread):
+    try:
+        _async_raise(thread.ident, SystemExit)
+        ser.close()
+    except ValueError:
+        tkinter.messagebox.showerror(title='测试已终止', message='请勿重复点击！！！')
+
+
+def Test():
+    playsound('C:\\wave_module\\template\\light.mp3')
+    tkinter.messagebox.showinfo(title="测试开始", message='开机后请确认-指示灯如右图所示！')
+    com_validate()
+    copy_test_template = Copy_Test_Template() #拷贝一份测试数据模板
+    copy_test_template.__init__()
+    time.sleep(10)
+    sendAT_Cmd(ser, 'osrc\r')
+    Read_Text()
+    time.sleep(1)
+    sendAT_Cmd(ser, 'root\r')
+    time.sleep(1)
+    Read_Text()
+    sendAT_Cmd(ser, 'su\r')
+    time.sleep(1)
+    Read_Text()
+    sendAT_Cmd(ser, 'root\r')
+    Read_Text()
+    time.sleep(3)
+    ser.close()
+    com_validate_ping()
+    sendAT_Cmd_ping(ser_ping, 'ping 10.1.2.11 -c 4\r')
+    Read_Text_ping()
+    ser_ping.close()
+    time.sleep(2)
+
+
+    com_validate()
+    time.sleep(2)
+    sendAT_Cmd(ser, 'cd /home/osrc/emmc_images\r')
+    Read_Text()
+    time.sleep(2)
+    ser.close()
+
+    com_validate_ping()
+    sendAT_Cmd_ping(ser_ping, './make_parted.sh\r')
+    #time.sleep(20)
+    Read_Text()
+    sendAT_Cmd_ping(ser_ping, './deploy_image.sh\r')
+    #time.sleep(25)
+    Read_Text()
+    if result_data5 == 'FAIL':
+        sendAT_Cmd_ping(ser_ping, './make_parted.sh\r')
+        #time.sleep(20)
+        Read_Text()
+        sendAT_Cmd_ping(ser_ping, './deploy_image.sh\r')
+        Read_Text()
+    #time.sleep(25)
+    # sendAT_Cmd_ping(ser_ping, '\r\n')
+    # Read_Text()
+    ser_ping.close()
+
+    com_validate_QSPI()
+    sendAT_Cmd_QSPI(ser_QSPI, '\r\n')
+    Read_Text_QSPI()
+    ser_QSPI.close()
+    write_test_result()
+    test_Result_handle()
+    stop_thread(t)
+
+
+def my_GUI():
+    win = tkinter.Tk()
+    win.title('wave_module_v2.3')
+    win.geometry('990x520')
+
+    Label(win, font='arial 14 bold', text='Current Time :', bg='papaya whip').place(x=520, y=5)
+    Label(win, font='arial 14 bold', text='Countdown :', bg='papaya whip').place(x=535, y=35)
+
+
+    def clock():
+        clock_time = time.strftime('%H:%M:%S %p')
+        curr_time.config(text=clock_time)
+        curr_time.after(1000, clock)
+
+    curr_time = Label(win, font='arial 15 bold', text='', fg='gray25', bg='papaya whip')
+    curr_time.place(x=660, y=5)
+    clock()
+
+    #######################timer countdown##########
+
+    # storing seconds
+    sec = StringVar()
+    Entry(win, textvariable=sec, width=2, font='arial 12').place(x=720, y=39)
+    sec.set('00')
+
+    # storing minutes
+    mins = StringVar()
+    Entry(win, textvariable=mins, width=2, font='arial 12').place(x=695, y=39)
+    mins.set('06')
+
+    # storing hours
+    hrs = StringVar()
+    Entry(win, textvariable=hrs, width=2, font='arial 12').place(x=670, y=39)
+    hrs.set('00')
+
+    ##########fun to start countdown
+
+
+    def countdown():
+        mins.set('06')
+        sec.set('00')
+
+        times = int(hrs.get()) * 3600 + int(mins.get()) * 60 + int(sec.get())
+        #times = int(mins.get()) * 60 + int(sec.get())
+        while times > -1:
+            minute, second = (times // 60, times % 60)
+            hour = 0
+            if minute > 60:
+                hour, minute = (minute // 60, minute % 60)
+
+            sec.set('%02d' % second)
+            mins.set('%02d' % minute)
+            hrs.set('%02d' % hour)
+
+            win.update()
+            time.sleep(1)
+
+            if (times == 0):
+                # playsound('Loud_Alarm_Clock_Buzzer.mp3')
+                sec.set('00')
+                mins.set('00')
+                hrs.set('00')
+            times -= 1
+
+    sh = ttk.Separator(win, orient=HORIZONTAL)
+    sh.grid(row=6, column=0, columnspan=6, sticky="we")
+
+    # ----------------菜单栏-------------------#
+
+    def _quit():
+        win.quit()
+        win.destroy()
+        exit()
+
+    # Display a Message Box
+    def _msgBox1():
+        showinfo('软件信息', '网址：http://www.digitgate.cn\n开发者: wangliang\n电话:18321313457\n地址：南京市玄武大道108号徐庄软件园聚慧园1号楼8F')
+
+    # Creating a Menu Bar
+    menuBar = Menu(win)
+    win.config(menu=menuBar)
+
+    # Add menu items
+    fileMenu = Menu(menuBar, tearoff=0)
+    fileMenu.add_command(label="新建")
+    fileMenu.add_separator()
+    fileMenu.add_command(label="退出", command=_quit)
+    menuBar.add_cascade(label="文件", menu=fileMenu)
+
+    # Add another Menu to the Menu Bar and an item
+    msgMenu = Menu(menuBar, tearoff=0)
+    msgMenu.add_command(label="软件信息", command=_msgBox1)
+    msgMenu.add_separator()
+    menuBar.add_cascade(label="关于", menu=msgMenu)
+    # ----------------菜单栏-------------------#
+
+    # ----------------GUI内容-------------------#
+    ttk.Label(win, text=" 串口号  ：").grid(column=0, row=0)  # 设置其在界面中出现的位置  column代表列   row 代表行
+    ttk.Label(win, text=" 波特率  ：").grid(column=0, row=1)  # 添加一个标签，并将其列设置为1，行设置为0
+    ttk.Label(win, text=" 序列号  ：").grid(column=0, row=2)
+    ttk.Label(win, text=" 测试模板：").grid(column=2, row=0)
+    ttk.Label(win, text=" 测试路径：").grid(column=2, row=1)
+
+    # 下拉列表1
+    global com_number
+    com_number = tkinter.StringVar()  # 改变StringVar，按钮上的文字也随之改变
+    com_numberChosen = ttk.Combobox(win, width=18, textvariable=com_number)
+    com_numberChosen['values'] = (port_name, 'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9', 'com10', 'com11', 'com12')
+    com_numberChosen.grid(column=1, row=0)  # 设置其在界面中出现的位置  column代表列   row 代表行
+    com_numberChosen.current(0)
+
+    def com_find():
+        port_list = list(serial.tools.list_ports.comports())
+        port_name_list = []
+        # global port_name
+        for itms in port_list:
+            port_name_list.append(itms.device)
+            port_name = port_name_list[0]
+            print('已自动识别到串口：' + port_name)
+        com_numberChosen['values'] = (port_name, 'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9', 'com10', 'com11', 'com12')
+        # com_numberChosen.grid(column=1, row=0)  # 设置其在界面中出现的位置  column代表列   row 代表行
+        com_numberChosen.current(0)
+
+    # number下拉列表2
+    global port
+    port = tkinter.StringVar()
+    port_numberChosen = ttk.Combobox(win, width=18, textvariable=port)
+    port_numberChosen['values'] = (115200, 9600)  # 设置下拉列表的值
+    port_numberChosen.grid(column=1, row=1)  # 设置其在界面中出现的位置  column代表列   row 代表行
+    port_numberChosen.current(0)  # 设置下拉列表默认显示的值，0为 numberChosen['values'] 的下标值
+
+    global sn
+    sn = tkinter.StringVar()
+    sn_path = ttk.Entry(win, width=20, textvariable=sn)
+    sn_path.insert(0, "WPMCB0001")
+    sn_path.grid(column=1, row=2)
+
+    def select_test_template_Path():
+        path_ = askopenfilename()
+        test_template.set(path_)
+
+    def select_test_result_Path():
+        path_ = askdirectory()
+        test_Result.set(path_)
+
+    # ------- 测试模板地址写入 ------#
+    global test_template
+    test_template = tkinter.StringVar()
+    test_template_path = ttk.Entry(win, width=25, textvariable=test_template)
+    test_template_path.insert(0, "C:/wave_module/template/ResultModel_wave_module_test.xls")
+    test_template_path.grid(column=3, row=0)
+    tkinter.Button(win, text="...", command=select_test_template_Path).grid(column=4, row=0, sticky=tkinter.NW)
+
+    # ------- 测试结果保存地址写入 --------#
+    global test_Result
+    test_Result = tkinter.StringVar()
+    test_result_path = ttk.Entry(win, width=25, textvariable=test_Result)
+    test_result_path.insert(0, "C:/wave_module")
+    test_result_path.grid(column=3, row=1)
+    Button(win, text="...", command=select_test_result_Path).grid(column=4, row=1, sticky=tkinter.NW)
+    #Button(win, text="...").grid(column=4, row=1, sticky=tkinter.W)
+
+    text_view = scrolledtext.ScrolledText(win, width=57, height=25, font=("隶书", 11))  # 滚动文本框（宽，高（这里的高应该是以行数为单位），字体样式）
+    text_view.place(x=5, y=133)  # 滚动文本框在页面的位置
+
+    photo = PhotoImage(file="C:/wave_module/template/2.gif")
+    theLabel = Label(win, image=photo)
+    theLabel.grid(column=5, row=9)
+
+    global Read_Text
+
+
+    def Read_Text():
+        text_view.insert(END, str(line) + '\n')
+        text_view.insert(END, str(result_print) + '\n')
+        text_view.see(END)
+
+    global Read_Text_QSPI
+
+    def Read_Text_QSPI():
+        text_view.insert(END, str(line_QSPI) + '\n')
+        text_view.insert(END, str(result_print_QSPI) + '\n')
+        text_view.see(END)
+
+    global Read_Text_ping
+
+    def Read_Text_ping():
+        text_view.insert(END, str(line_ping) + '\n')
+        text_view.insert(END, str(result_print_ping) + '\n')
+        text_view.see(END)
+
+    # 测试按钮
+    action = tkinter.Button(win, text="开始测试", font=("黑体", 12), command=lambda: [thread_it(Test), thread_it(countdown)]) # 创建一个按钮, text：显示按钮上面显示的文字, command：关闭窗口，程序继续运行
+    action.grid(column=1, row=7, rowspan=2, ipady=7, sticky='nse')  # 设置其在界面中出现的位置  column代表列   row 代表行
+
+    # 停止按钮
+    action = tkinter.Button(win, text="终止程序", font=("黑体", 12), command=lambda: stop_thread(t))
+    action.grid(column=3, row=7, rowspan=2, ipady=7, sticky='se')
+
+    # 识别串口
+    action = tkinter.Button(win, text="识别串口", font=("黑体", 9), command=lambda: thread_it(com_find))
+    action.grid(column=0, row=7, rowspan=2, ipady=7, sticky='nse')
+    # ----------------内容-------------------#
+    win.mainloop()
+
+
+#---------------程序运行入口---------------#
+
+
+if __name__ == '__main__':
+    my_GUI()
+
+
+
